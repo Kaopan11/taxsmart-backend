@@ -1,0 +1,100 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+enum OcrStatus {
+  PENDING     // รอคิวประมวลผล
+  PROCESSING  // กำลังส่งให้ AI ทำงาน
+  COMPLETED   // ประมวลผลและดึงข้อมูลสำเร็จ
+  FAILED      // OCR ล้มเหลว หรือรูปภาพไม่ชัดเจน
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+// ==========================================
+// MODELS
+// ==========================================
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  fullName     String?   @map("full_name")
+  role         Role      @default(USER)
+  
+  invoices     Invoice[]
+
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Invoice {
+  id              String      @id @default(uuid())
+  userId          String      @map("user_id")
+  
+  // ข้อมูลหัวบิลและร้านค้า
+  merchantName    String?     @map("merchant_name")
+  merchantTaxId   String?     @map("merchant_tax_id")
+  merchantAddress String?     @db.Text @map("merchant_address")
+  invoiceNumber   String?     @map("invoice_number")
+  issueDate       DateTime?   @map("issue_date")
+
+  // ข้อมูลตัวเลขทางการเงิน (ใช้ Decimal ป้องกันปัญหา Floating-point precision)
+  netAmount       Decimal?    @db.Decimal(12, 2) @map("net_amount")      // ยอดก่อน VAT
+  vatAmount       Decimal?    @db.Decimal(12, 2) @map("vat_amount")      // ภาษีมูลค่าเพิ่ม (VAT 7%)
+  totalAmount     Decimal?    @db.Decimal(12, 2) @map("total_amount")    // ยอดรวมสุทธิ
+
+  // ไฟล์แนบและสถานะ AI OCR
+  fileUrl         String      @map("file_url")                           // URL รูปภาพ/PDF ใน Storage
+  ocrStatus       OcrStatus   @default(PENDING) @map("ocr_status")
+  rawOcrData      Json?       @map("raw_ocr_data")                       // เก็บ Response ดิบจาก Gemini เพื่อ Debug/Auditing
+  confidenceScore Float?      @map("confidence_score")                   // คะแนนความแม่นยำของโมเดล
+
+  // Relations
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items           InvoiceItem[]
+
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([ocrStatus])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String   @id @default(uuid())
+  invoiceId   String   @map("invoice_id")
+  
+  name        String   @map("name")
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(12, 2) @map("unit_price")
+  totalPrice  Decimal  @db.Decimal(12, 2) @map("total_price")
+
+  // Relations
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
