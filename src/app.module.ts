@@ -4,6 +4,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { GeminiModule } from './gemini/gemini.module';
 import { InvoicesModule } from './invoices/invoices.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { QueueModule } from './queue/queue.module';
 
 @Module({
   imports: [
@@ -13,6 +15,8 @@ import { InvoicesModule } from './invoices/invoices.module';
     }),
     GeminiModule,
     InvoicesModule,
+    PrismaModule,
+    QueueModule,
   ],
   controllers: [AppController],
   providers: [AppService],

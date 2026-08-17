@@ -1,6 +1,5 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GoogleGenAI, Type } from '@google/genai';
 
 export type ReceiptCategory =
   | 'OFFICE_SUPPLIES'
@@ -23,7 +22,7 @@ export type ExtractedReceipt = {
 
 @Injectable()
 export class GeminiService {
-  private readonly client: GoogleGenAI;
+  private readonly apiKey: string;
   private readonly model = 'gemini-3.6-flash';
 
   constructor(private readonly configService: ConfigService) {
@@ -31,14 +30,17 @@ export class GeminiService {
     if (!apiKey) {
       throw new Error('GEMINI_API_KEY is not set');
     }
-    this.client = new GoogleGenAI({ apiKey });
+    this.apiKey = apiKey;
   }
 
   async extractReceipt(
     fileBuffer: Buffer,
     mimeType: string,
   ): Promise<ExtractedReceipt> {
-    const response = await this.client.models.generateContent({
+    const { GoogleGenAI, Type } = await import('@google/genai');
+    const client = new GoogleGenAI({ apiKey: this.apiKey });
+
+    const response = await client.models.generateContent({
       model: this.model,
       contents: [
         {

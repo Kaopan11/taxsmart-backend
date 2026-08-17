@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { GeminiModule } from '../gemini/gemini.module';
+import { QueueModule } from '../queue/queue.module';
 import { InvoicesController } from './invoices.controller';
 import { InvoicesService } from './invoices.service';
 
 @Module({
-  imports: [GeminiModule],
+  imports: [QueueModule],
   controllers: [InvoicesController],
   providers: [InvoicesService],
 })

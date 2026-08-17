@@ -1,6 +1,10 @@
 import {
     BadRequestException,
     Controller,
+    Get,
+    HttpCode,
+    HttpStatus,
+    Param,
     Post,
     UploadedFile,
     UseInterceptors,
@@ -23,6 +27,7 @@ import {
     constructor(private readonly invoicesService: InvoicesService) {}
   
     @Post('upload')
+    @HttpCode(HttpStatus.ACCEPTED)
     @UseInterceptors(
       FileInterceptor('file', {
         limits: { fileSize: MAX_FILE_SIZE },
@@ -45,6 +50,11 @@ import {
         throw new BadRequestException('File is required');
       }
   
-      return this.invoicesService.extractFromUpload(file);
+      return this.invoicesService.enqueueUpload(file);
+    }
+
+    @Get(':id')
+    findById(@Param('id') id: string) {
+      return this.invoicesService.findById(id);
     }
   }
