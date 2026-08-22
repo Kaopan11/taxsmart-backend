@@ -68,6 +68,33 @@ export class InvoicesService {
     };
   }
 
+  async findAll() {
+    // Step 5: รายการใบทั้งหมดของ demo user (ยังไม่มี JWT)
+    const demoUser = await this.prisma.user.findUnique({
+      where: { email: 'demo@taxsmart.local' },
+    });
+    if (!demoUser) {
+      throw new NotFoundException('Demo user is missing');
+    }
+
+    return this.prisma.invoice.findMany({
+      where: { userId: demoUser.id },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        ocrStatus: true,
+        merchantName: true,
+        merchantTaxId: true,
+        invoiceNumber: true,
+        issueDate: true,
+        totalAmount: true,
+        rawOcrData: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
   async findById(id: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },

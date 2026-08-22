@@ -53,6 +53,13 @@ import {
       return this.invoicesService.enqueueUpload(file);
     }
 
+    // Step 5: GET /invoices ต้องอยู่เหนือ GET /invoices/:id
+    // ไม่งั้น Nest จะคิดว่าคำว่า "list" หรือ path ว่างเป็น :id
+    @Get()
+    findAll() {
+      return this.invoicesService.findAll();
+    }
+
     @Get(':id')
     findById(@Param('id') id: string) {
       return this.invoicesService.findById(id);
