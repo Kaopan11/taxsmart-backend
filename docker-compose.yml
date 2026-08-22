@@ -1,0 +1,41 @@
+services:
+  # --- Service 1: MySQL Database ---
+  mysql:
+    image: mysql:8.0
+    container_name: taxsmart-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: taxsmart_db
+      MYSQL_USER: taxsmart_user
+      MYSQL_PASSWORD: taxsmart_password
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Service 2: Redis In-Memory Cache & Queue ---
+  redis:
+    image: redis:7-alpine
+    container_name: taxsmart-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# --- Persistent Storage Volumes ---
+volumes:
+  mysql_data:
+  redis_data:
