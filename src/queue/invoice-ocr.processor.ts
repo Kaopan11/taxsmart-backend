@@ -39,12 +39,50 @@ export class InvoiceOcrProcessor extends WorkerHost {
         mimeType,
       );
 
+      // ต้องรู้ userId ของใบนี้ก่อนเช็กซ้ำ
+      const current = await this.prisma.invoice.findUnique({
+        where: { id: invoiceId },
+        select: { userId: true },
+      });
+      if (!current) {
+        throw new Error(`Invoice ${invoiceId} not found during OCR`);
+      }
+
+      // เช็กซ้ำได้เมื่อมีทั้งเลขผู้เสียภาษี + เลขที่บิล
+      // ใบอื่นของ user เดียวกันที่ COMPLETED หรือ DUPLICATE แล้ว
+      let ocrStatus: OcrStatus = OcrStatus.COMPLETED;
+      const taxId = extracted.taxId?.trim() || null;
+      const invoiceNumber = extracted.invoiceNumber?.trim() || null;
+
+      if (taxId && invoiceNumber) {
+        const duplicate = await this.prisma.invoice.findFirst({
+          where: {
+            userId: current.userId,
+            id: { not: invoiceId },
+            merchantTaxId: taxId,
+            invoiceNumber,
+            ocrStatus: {
+              in: [OcrStatus.COMPLETED, OcrStatus.DUPLICATE],
+            },
+          },
+          select: { id: true },
+        });
+
+        if (duplicate) {
+          ocrStatus = OcrStatus.DUPLICATE;
+          this.logger.warn(
+            `Duplicate invoiceId=${invoiceId} matches existing=${duplicate.id}`,
+          );
+        }
+      }
+
       await this.prisma.invoice.update({
         where: { id: invoiceId },
         data: {
-          ocrStatus: OcrStatus.COMPLETED,
+          ocrStatus,
           merchantName: extracted.storeName,
-          merchantTaxId: extracted.taxId,
+          merchantTaxId: taxId,
+          invoiceNumber,
           issueDate: extracted.invoiceDate
             ? new Date(`${extracted.invoiceDate}T00:00:00.000Z`)
             : null,
@@ -53,7 +91,9 @@ export class InvoiceOcrProcessor extends WorkerHost {
         },
       });
 
-      this.logger.log(`OCR done invoiceId=${invoiceId}`);
+      this.logger.log(
+        `OCR done invoiceId=${invoiceId} status=${ocrStatus}`,
+      );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unknown OCR error';

@@ -19,6 +19,7 @@ enum OcrStatus {
   PROCESSING  // กำลังส่งให้ AI ทำงาน
   COMPLETED   // ประมวลผลและดึงข้อมูลสำเร็จ
   FAILED      // OCR ล้มเหลว หรือรูปภาพไม่ชัดเจน
+  DUPLICATE   // ใบซ้ำ: เลขผู้เสียภาษี + เลขที่บิล ตรงกับใบเดิมของ user
 }
 
 enum Role {
@@ -76,6 +77,8 @@ model Invoice {
 
   @@index([userId])
   @@index([ocrStatus])
+  // ใช้ค้นหาใบซ้ำเร็วขึ้น (user + taxId + เลขที่บิล)
+  @@index([userId, merchantTaxId, invoiceNumber])
   @@map("invoices")
 }
 
