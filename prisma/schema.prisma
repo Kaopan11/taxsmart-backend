@@ -65,6 +65,8 @@ model Invoice {
   // ไฟล์แนบและสถานะ AI OCR
   fileUrl         String      @map("file_url")                           // URL รูปภาพ/PDF ใน Storage
   ocrStatus       OcrStatus   @default(PENDING) @map("ocr_status")
+  // หมวดภาษีจาก Gemini (OFFICE_SUPPLIES, ...) — ใช้กรอง Search & Filter
+  category        String?     @map("category")
   rawOcrData      Json?       @map("raw_ocr_data")                       // เก็บ Response ดิบจาก Gemini เพื่อ Debug/Auditing
   confidenceScore Float?      @map("confidence_score")                   // คะแนนความแม่นยำของโมเดล
 
@@ -77,6 +79,7 @@ model Invoice {
 
   @@index([userId])
   @@index([ocrStatus])
+  @@index([category])
   // ใช้ค้นหาใบซ้ำเร็วขึ้น (user + taxId + เลขที่บิล)
   @@index([userId, merchantTaxId, invoiceNumber])
   @@map("invoices")
