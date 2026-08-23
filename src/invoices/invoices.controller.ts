@@ -8,9 +8,13 @@ import {
   Post,
   Query,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { AuthUser } from '../auth/auth-user.type';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InvoicesService } from './invoices.service';
 import type { UploadedReceiptFile } from './invoices.service';
 
@@ -24,6 +28,7 @@ const ALLOWED_MIME_TYPES = [
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 @Controller('invoices')
+@UseGuards(JwtAuthGuard) // P1: ทุก route ต้องมี Bearer token
 export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
 
@@ -46,27 +51,31 @@ export class InvoicesController {
       },
     }),
   )
-  upload(@UploadedFile() file: UploadedReceiptFile) {
+  upload(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file: UploadedReceiptFile,
+  ) {
     if (!file) {
       throw new BadRequestException('File is required');
     }
 
-    return this.invoicesService.enqueueUpload(file);
+    // ผูกใบเสร็จกับ user ที่ล็อกอิน ไม่ใช้ demo อีก
+    return this.invoicesService.enqueueUpload(user.userId, file);
   }
 
   // GET /invoices ต้องอยู่เหนือ GET /invoices/:id
-  // Step B1: รับ ?q=&status=&category=
   @Get()
   findAll(
+    @CurrentUser() user: AuthUser,
     @Query('q') q?: string,
     @Query('status') status?: string,
     @Query('category') category?: string,
   ) {
-    return this.invoicesService.findAll({ q, status, category });
+    return this.invoicesService.findAll(user.userId, { q, status, category });
   }
 
   @Get(':id')
-  findById(@Param('id') id: string) {
-    return this.invoicesService.findById(id);
+  findById(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.invoicesService.findById(user.userId, id);
   }
 }
