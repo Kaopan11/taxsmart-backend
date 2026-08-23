@@ -15,6 +15,8 @@ export type ReceiptCategory =
 export type ExtractedReceipt = {
   storeName: string | null;
   taxId: string | null;
+  /** เลขที่ใบเสร็จ / ใบกำกับภาษี — ใช้คู่กับ taxId ตอนเช็กซ้ำ */
+  invoiceNumber: string | null;
   invoiceDate: string | null;
   totalAmount: number | null;
   category: ReceiptCategory;
@@ -59,6 +61,7 @@ export class GeminiService {
           'Read only what is visible. Do not invent values.',
           'If a field is missing or unreadable, return null.',
           'taxId must be 13 digits when present, digits only.',
+          'invoiceNumber is the receipt/invoice document number when present.',
           'invoiceDate must be YYYY-MM-DD.',
           'totalAmount is the final payable amount in THB, no currency symbol.',
           'Pick the closest tax category for SME/freelance deduction.',
@@ -69,6 +72,7 @@ export class GeminiService {
           properties: {
             storeName: { type: Type.STRING, nullable: true },
             taxId: { type: Type.STRING, nullable: true },
+            invoiceNumber: { type: Type.STRING, nullable: true },
             invoiceDate: { type: Type.STRING, nullable: true },
             totalAmount: { type: Type.NUMBER, nullable: true },
             category: {
@@ -89,6 +93,7 @@ export class GeminiService {
           required: [
             'storeName',
             'taxId',
+            'invoiceNumber',
             'invoiceDate',
             'totalAmount',
             'category',
