@@ -32,7 +32,6 @@ const MIME_TO_EXT: Record<string, string> = {
 
 const VALID_STATUSES = new Set<string>(Object.values(OcrStatus));
 
-// รับได้ทั้งรหัส Gemini และชื่อที่โชว์บน frontend
 const CATEGORY_ALIASES: Record<string, string> = {
   OFFICE_SUPPLIES: 'OFFICE_SUPPLIES',
   'OFFICE SUPPLIES': 'OFFICE_SUPPLIES',
@@ -70,14 +69,8 @@ export class InvoicesService {
     private readonly invoiceOcrQueue: Queue<InvoiceOcrJobData>,
   ) {}
 
-  async enqueueUpload(file: UploadedReceiptFile) {
-    const demoUser = await this.prisma.user.findUnique({
-      where: { email: 'demo@taxsmart.local' },
-    });
-    if (!demoUser) {
-      throw new NotFoundException('Demo user is missing');
-    }
-
+  /** P1: รับ userId จาก JWT แทน demo@taxsmart.local */
+  async enqueueUpload(userId: string, file: UploadedReceiptFile) {
     const invoiceId = randomUUID();
     const extension = MIME_TO_EXT[file.mimetype] ?? '.bin';
     const relativePath = join('uploads', `${invoiceId}${extension}`);
@@ -89,7 +82,7 @@ export class InvoicesService {
     await this.prisma.invoice.create({
       data: {
         id: invoiceId,
-        userId: demoUser.id,
+        userId,
         fileUrl: relativePath.replaceAll('\\', '/'),
         ocrStatus: OcrStatus.PENDING,
       },
@@ -107,20 +100,11 @@ export class InvoicesService {
     };
   }
 
-  async findAll(query: InvoiceListQuery = {}) {
-    // Step B2: สร้าง where ตาม query ของ demo user
-    const demoUser = await this.prisma.user.findUnique({
-      where: { email: 'demo@taxsmart.local' },
-    });
-    if (!demoUser) {
-      throw new NotFoundException('Demo user is missing');
-    }
-
+  async findAll(userId: string, query: InvoiceListQuery = {}) {
     const where: Prisma.InvoiceWhereInput = {
-      userId: demoUser.id,
+      userId,
     };
 
-    // Step B3: Search — ชื่อร้าน / Tax ID / เลขที่บิล (contains, ไม่สนตัวพิมพ์)
     const q = query.q?.trim();
     if (q) {
       where.OR = [
@@ -130,7 +114,6 @@ export class InvoicesService {
       ];
     }
 
-    // Step B4: Status — ต้องเป็นค่าใน enum OcrStatus
     const status = query.status?.trim();
     if (status && status.toLowerCase() !== 'all') {
       if (!VALID_STATUSES.has(status)) {
@@ -141,7 +124,6 @@ export class InvoicesService {
       where.ocrStatus = status as OcrStatus;
     }
 
-    // Step B5: Category — เก็บในคอลัมน์ category (รหัสเช่น OFFICE_SUPPLIES)
     const categoryKey = this.normalizeCategory(query.category);
     if (categoryKey) {
       where.category = categoryKey;
@@ -154,9 +136,10 @@ export class InvoicesService {
     });
   }
 
-  async findById(id: string) {
-    const invoice = await this.prisma.invoice.findUnique({
-      where: { id },
+  /** ดูได้เฉพาะใบของตัวเอง */
+  async findById(userId: string, id: string) {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id, userId },
       select: INVOICE_LIST_SELECT,
     });
 
@@ -167,7 +150,6 @@ export class InvoicesService {
     return invoice;
   }
 
-  /** แปลง "Office Supplies" หรือ "OFFICE_SUPPLIES" → OFFICE_SUPPLIES */
   private normalizeCategory(raw?: string): string | null {
     if (!raw?.trim()) {
       return null;
