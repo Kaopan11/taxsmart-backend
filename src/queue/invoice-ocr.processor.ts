@@ -87,6 +87,8 @@ export class InvoiceOcrProcessor extends WorkerHost {
             ? new Date(`${extracted.invoiceDate}T00:00:00.000Z`)
             : null,
           totalAmount: extracted.totalAmount,
+          // Step B5: เก็บหมวดเป็นคอลัมน์ เพื่อ GET /invoices?category=...
+          category: extracted.category,
           rawOcrData: extracted,
         },
       });
