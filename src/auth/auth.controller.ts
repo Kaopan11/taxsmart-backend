@@ -1,9 +1,20 @@
-import { Body, Controller, Post, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
+import type { AuthUser } from './auth-user.type';
 import { AuthService } from './auth.service';
 import { DEFAULT_REFRESH_COOKIE } from './auth-cookies';
+import { CurrentUser } from './current-user.decorator';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { JwtAuthGuard } from './jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -52,5 +63,12 @@ export class AuthController {
       process.env.REFRESH_COOKIE_NAME ?? DEFAULT_REFRESH_COOKIE;
     const raw = req.cookies?.[cookieName] as string | undefined;
     return this.authService.logout(raw, res);
+  }
+
+  /** GET /auth/me — ดูโปรไฟล์ + role ของคนที่ล็อกอิน */
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  me(@CurrentUser() user: AuthUser) {
+    return this.authService.getMe(user.userId);
   }
 }

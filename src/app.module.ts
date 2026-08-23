@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AdminModule } from './admin/admin.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
@@ -14,7 +15,8 @@ import { QueueModule } from './queue/queue.module';
       isGlobal: true, // ทำให้ ConfigService ใช้งานได้ทุก Module อัตโนมัติ
       envFilePath: '.env',
     }),
-    AuthModule, // P1: /auth/register + /auth/login + JwtStrategy
+    AuthModule, // P1–P2: register/login/refresh + JwtStrategy
+    AdminModule, // P3: /admin/* ต้องเป็น ADMIN
     GeminiModule,
     InvoicesModule,
     PrismaModule,

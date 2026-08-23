@@ -9,6 +9,7 @@ import type { AuthUser } from './auth-user.type';
 type JwtPayload = {
   sub: string; // userId
   email: string;
+  role?: string; // P3: มีใน token ใหม่ — ฝั่ง server ยังอ่าน role จาก DB เป็นหลัก
 };
 
 @Injectable()

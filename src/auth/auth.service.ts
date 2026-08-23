@@ -144,6 +144,25 @@ export class AuthService {
     return { ok: true };
   }
 
+  /** P3: โปรไฟล์จาก DB ตาม userId ใน JWT */
+  async getMe(userId: string): Promise<PublicUser> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User no longer exists');
+    }
+
+    return user;
+  }
+
   private async issueTokensAndSetCookie(
     user: PublicUser,
     res: Response,
@@ -151,6 +170,7 @@ export class AuthService {
     const accessToken = this.jwtService.sign({
       sub: user.id,
       email: user.email,
+      role: user.role, // P3: ใส่ role ใน JWT (ฝั่ง server ยังโหลดจาก DB ใน JwtStrategy)
     });
 
     const { rawToken, expiresAt } = await this.createRefreshToken(user.id);
