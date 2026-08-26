@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   UploadedFile,
@@ -15,6 +17,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { AuthUser } from '../auth/auth-user.type';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { InvoicesService } from './invoices.service';
 import type { UploadedReceiptFile } from './invoices.service';
 
@@ -77,5 +80,14 @@ export class InvoicesController {
   @Get(':id')
   findById(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.invoicesService.findById(user.userId, id);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateInvoiceDto,
+  ) {
+    return this.invoicesService.update(user.userId, id, dto);
   }
 }
