@@ -139,4 +139,12 @@ describe('InvoicesService.update', () => {
       }),
     );
   });
+
+  it('throws BadRequestException when category is blank', async () => {
+    prisma.invoice.findFirst.mockResolvedValue(baseInvoice);
+
+    await expect(
+      service.update(userId, invoiceId, { category: '   ' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
 });

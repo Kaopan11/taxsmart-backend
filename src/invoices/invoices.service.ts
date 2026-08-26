@@ -204,9 +204,10 @@ export class InvoicesService {
     }
     if (dto.category !== undefined) {
       const categoryKey = this.normalizeCategory(dto.category);
-      if (categoryKey) {
-        data.category = categoryKey;
+      if (!categoryKey) {
+        throw new BadRequestException('category must not be empty');
       }
+      data.category = categoryKey;
     }
 
     if (Object.keys(data).length === 0) {
