@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { InjectQueue } from '@nestjs/bullmq';
 import {
@@ -16,10 +16,22 @@ import {
   type InvoiceOcrJobData,
 } from '../queue/queue.constants';
 import type { UpdateInvoiceDto } from './dto/update-invoice.dto';
+import {
+  contentTypeFromFileUrl,
+  filenameFromFileUrl,
+  resolveInvoiceFilePath,
+} from './invoice-file.util';
 
 export type UploadedReceiptFile = {
   buffer: Buffer;
   mimetype: string;
+};
+
+/** ข้อมูลไฟล์ที่ controller ใช้ส่ง binary + headers */
+export type InvoiceFilePayload = {
+  buffer: Buffer;
+  contentType: string;
+  filename: string;
 };
 
 /** Query ของ GET /invoices?q=&status=&category= */
@@ -62,6 +74,7 @@ const INVOICE_LIST_SELECT = {
   issueDate: true,
   totalAmount: true,
   category: true,
+  fileUrl: true, // FE รู้ว่ามีไฟล์ — แต่ fetch ผ่าน GET /invoices/:id/file ไม่เปิด URL ตรง
   rawOcrData: true,
   createdAt: true,
   updatedAt: true,
@@ -154,6 +167,48 @@ export class InvoicesService {
     }
 
     return invoice;
+  }
+
+  /**
+   * GET /invoices/:id/file — อ่านไฟล์ใบเสร็จจาก disk
+   * ต้องเป็นเจ้าของ invoice; ไม่เปิด static public /uploads
+   */
+  async getInvoiceFile(userId: string, id: string): Promise<InvoiceFilePayload> {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id, userId },
+      select: { fileUrl: true },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException(`Invoice ${id} not found`);
+    }
+
+    let absolutePath: string;
+    try {
+      absolutePath = resolveInvoiceFilePath(invoice.fileUrl);
+    } catch {
+      throw new NotFoundException(`Invoice file for ${id} not found`);
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = await readFile(absolutePath);
+    } catch (error) {
+      const code =
+        error instanceof Error && 'code' in error
+          ? (error as NodeJS.ErrnoException).code
+          : undefined;
+      if (code === 'ENOENT') {
+        throw new NotFoundException(`Invoice file for ${id} not found`);
+      }
+      throw error;
+    }
+
+    return {
+      buffer,
+      contentType: contentTypeFromFileUrl(invoice.fileUrl),
+      filename: filenameFromFileUrl(invoice.fileUrl),
+    };
   }
 
   /**
