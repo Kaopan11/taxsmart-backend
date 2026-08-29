@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -75,6 +76,23 @@ export class InvoicesController {
     @Query('category') category?: string,
   ) {
     return this.invoicesService.findAll(user.userId, { q, status, category });
+  }
+
+  /**
+   * GET /invoices/:id/file — ส่ง binary ใบเสร็จ (JWT + owner เท่านั้น)
+   * ต้องประกาศก่อน @Get(':id') เพื่อไม่ให้ route JSON กลืน path นี้
+   */
+  @Get(':id/file')
+  async getInvoiceFile(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ): Promise<StreamableFile> {
+    const file = await this.invoicesService.getInvoiceFile(user.userId, id);
+
+    return new StreamableFile(file.buffer, {
+      type: file.contentType,
+      disposition: `inline; filename="${file.filename}"`,
+    });
   }
 
   @Get(':id')
