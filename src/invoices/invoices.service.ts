@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { InjectQueue } from '@nestjs/bullmq';
 import {
@@ -279,6 +279,53 @@ export class InvoicesService {
       data,
       select: INVOICE_LIST_SELECT,
     });
+  }
+
+  /**
+   * DELETE /invoices/:id — ลบใบเสร็จถาวร (hard delete)
+   * ลบได้ทุก ocrStatus — ต่างจาก PATCH ที่ block PENDING/PROCESSING/DUPLICATE
+   */
+  async remove(userId: string, id: string): Promise<void> {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id, userId },
+      select: { id: true, fileUrl: true, ocrStatus: true },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException(`Invoice ${id} not found`);
+    }
+
+    // ยกเลิกคิว OCR ถ้ายังไม่จบ — jobId ตั้งเป็น invoiceId ตอน upload
+    if (
+      invoice.ocrStatus === OcrStatus.PENDING ||
+      invoice.ocrStatus === OcrStatus.PROCESSING
+    ) {
+      const job = await this.invoiceOcrQueue.getJob(id);
+      if (job) {
+        await job.remove();
+      }
+    }
+
+    // ลบไฟล์บน disk — ไฟล์หายหรือ path ไม่ valid ไม่ block การลบ DB
+    try {
+      const absolutePath = resolveInvoiceFilePath(invoice.fileUrl);
+      await unlink(absolutePath);
+    } catch (error) {
+      const code =
+        error instanceof Error && 'code' in error
+          ? (error as NodeJS.ErrnoException).code
+          : undefined;
+      const isMissingFile = code === 'ENOENT';
+      const isInvalidPath =
+        error instanceof Error &&
+        error.message === 'Invalid invoice file path';
+      if (!isMissingFile && !isInvalidPath) {
+        throw error;
+      }
+    }
+
+    // InvoiceItem ลบ cascade ตาม schema — ไม่ต้องลบเอง
+    await this.prisma.invoice.delete({ where: { id } });
   }
 
   private normalizeCategory(raw?: string): string | null {
