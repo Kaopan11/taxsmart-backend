@@ -107,11 +107,16 @@ export class InvoicesService {
       },
     });
 
-    await this.invoiceOcrQueue.add('extract', {
-      invoiceId,
-      filePath: relativePath.replaceAll('\\', '/'),
-      mimeType: file.mimetype,
-    });
+    // jobId = invoiceId → ตอน DELETE เรียก getJob(invoiceId).remove() ยกเลิกคิวได้ตรง ๆ
+    await this.invoiceOcrQueue.add(
+      'extract',
+      {
+        invoiceId,
+        filePath: relativePath.replaceAll('\\', '/'),
+        mimeType: file.mimetype,
+      },
+      { jobId: invoiceId },
+    );
 
     return {
       invoiceId,
