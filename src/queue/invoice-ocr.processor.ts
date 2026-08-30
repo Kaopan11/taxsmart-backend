@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { OcrStatus } from '.prisma/client';
+import { OcrStatus, Prisma } from '.prisma/client';
 import { GeminiService } from '../gemini/gemini.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -26,10 +26,14 @@ export class InvoiceOcrProcessor extends WorkerHost {
     const { invoiceId, filePath, mimeType } = job.data;
     this.logger.log(`OCR start invoiceId=${invoiceId} jobId=${job.id}`);
 
-    await this.prisma.invoice.update({
-      where: { id: invoiceId },
-      data: { ocrStatus: OcrStatus.PROCESSING },
-    });
+    const markedProcessing = await this.safeInvoiceUpdate(
+      invoiceId,
+      { ocrStatus: OcrStatus.PROCESSING },
+      'mark-processing',
+    );
+    if (!markedProcessing) {
+      return;
+    }
 
     try {
       const absolutePath = join(process.cwd(), ...filePath.split('/'));
@@ -39,13 +43,20 @@ export class InvoiceOcrProcessor extends WorkerHost {
         mimeType,
       );
 
-      // ต้องรู้ userId ของใบนี้ก่อนเช็กซ้ำ
+      // ใบอาจถูก DELETE ระหว่างรอ Gemini — หยุดเงียบ ๆ ไม่ throw
+      if (await this.isInvoiceDeleted(invoiceId, 'after-extract')) {
+        return;
+      }
+
       const current = await this.prisma.invoice.findUnique({
         where: { id: invoiceId },
         select: { userId: true },
       });
       if (!current) {
-        throw new Error(`Invoice ${invoiceId} not found during OCR`);
+        this.logger.warn(
+          `OCR aborted invoiceId=${invoiceId} — invoice deleted during OCR`,
+        );
+        return;
       }
 
       // เช็กซ้ำได้เมื่อมีทั้งเลขผู้เสียภาษี + เลขที่บิล
@@ -76,9 +87,13 @@ export class InvoiceOcrProcessor extends WorkerHost {
         }
       }
 
-      await this.prisma.invoice.update({
-        where: { id: invoiceId },
-        data: {
+      if (await this.isInvoiceDeleted(invoiceId, 'before-complete')) {
+        return;
+      }
+
+      const completed = await this.safeInvoiceUpdate(
+        invoiceId,
+        {
           ocrStatus,
           merchantName: extracted.storeName,
           merchantTaxId: taxId,
@@ -87,27 +102,89 @@ export class InvoiceOcrProcessor extends WorkerHost {
             ? new Date(`${extracted.invoiceDate}T00:00:00.000Z`)
             : null,
           totalAmount: extracted.totalAmount,
-          // Step B5: เก็บหมวดเป็นคอลัมน์ เพื่อ GET /invoices?category=...
           category: extracted.category,
           rawOcrData: extracted,
         },
-      });
+        'mark-complete',
+      );
+      if (!completed) {
+        return;
+      }
 
       this.logger.log(
         `OCR done invoiceId=${invoiceId} status=${ocrStatus}`,
       );
     } catch (error) {
+      // ถ้า user ลบใบระหว่าง OCR จริง ๆ — ไม่ log error รก
+      if (await this.isInvoiceDeleted(invoiceId, 'after-error')) {
+        return;
+      }
+
       const message =
         error instanceof Error ? error.message : 'Unknown OCR error';
       this.logger.error(`OCR failed invoiceId=${invoiceId}: ${message}`);
 
-      await this.prisma.invoice.update({
-        where: { id: invoiceId },
-        data: {
+      await this.safeInvoiceUpdate(
+        invoiceId,
+        {
           ocrStatus: OcrStatus.FAILED,
           rawOcrData: { error: message },
         },
-      });
+        'mark-failed',
+      );
     }
+  }
+
+  /** ใบถูกลบแล้ว (DELETE) — worker หยุดต่อ ไม่ throw */
+  private async isInvoiceDeleted(
+    invoiceId: string,
+    phase: string,
+  ): Promise<boolean> {
+    const row = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { id: true },
+    });
+    if (!row) {
+      this.logger.warn(
+        `OCR aborted invoiceId=${invoiceId} at ${phase} — invoice deleted`,
+      );
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * update invoice แบบจับ P2025 (record ถูกลบระหว่างทาง)
+   * คืน false = หยุด job เงียบ ๆ
+   */
+  private async safeInvoiceUpdate(
+    invoiceId: string,
+    data: Prisma.InvoiceUpdateInput,
+    phase: string,
+  ): Promise<boolean> {
+    try {
+      await this.prisma.invoice.update({
+        where: { id: invoiceId },
+        data,
+      });
+      return true;
+    } catch (error) {
+      if (this.isRecordNotFound(error)) {
+        this.logger.warn(
+          `OCR update skipped invoiceId=${invoiceId} at ${phase} — invoice deleted`,
+        );
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  private isRecordNotFound(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code: string }).code === 'P2025'
+    );
   }
 }
