@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -107,5 +108,12 @@ export class InvoicesController {
     @Body() dto: UpdateInvoiceDto,
   ) {
     return this.invoicesService.update(user.userId, id, dto);
+  }
+
+  /** DELETE /invoices/:id — 204 ไม่มี body; เฉพาะเจ้าของ invoice */
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.invoicesService.remove(user.userId, id);
   }
 }
