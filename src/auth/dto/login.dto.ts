@@ -1,11 +1,11 @@
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsString, MinLength } from 'class-validator';
 
 /** Body ของ POST /auth/login */
 export class LoginDto {
-  @IsEmail()
+  @IsString({ message: 'Email is required' })
   email!: string;
 
-  @IsString()
-  @MinLength(1)
+  @IsString({ message: 'Password is required' })
+  @MinLength(1, { message: 'Password is required' })
   password!: string;
 }

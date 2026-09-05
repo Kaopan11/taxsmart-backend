@@ -57,7 +57,7 @@ export class AuthService {
       data: {
         email,
         passwordHash,
-        fullName: dto.fullName?.trim() || null,
+        fullName: dto.fullName.trim(),
       },
       select: {
         id: true,
@@ -78,12 +78,12 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Email is incorrect');
     }
 
     const passwordOk = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordOk) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Password is incorrect');
     }
 
     return this.issueTokensAndSetCookie(
