@@ -1,16 +1,15 @@
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsString, Length, MinLength } from 'class-validator';
 
 /** Body ของ POST /auth/register */
 export class RegisterDto {
-  @IsEmail()
+  @IsString({ message: 'Name is required' })
+  @Length(6, 20, { message: 'Name must be between 6 and 20 characters' })
+  fullName!: string;
+
+  @IsEmail({}, { message: 'Invalid email' })
   email!: string;
 
-  @IsString()
-  @MinLength(6, { message: 'Password must be at least 6 characters' })
+  @IsString({ message: 'Password is required' })
+  @MinLength(9, { message: 'Password must be more than 8 characters' })
   password!: string;
-
-  /** ตรงกับ User.fullName ใน Prisma — ไม่บังคับ */
-  @IsOptional()
-  @IsString()
-  fullName?: string;
 }
