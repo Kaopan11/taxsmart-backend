@@ -6,8 +6,9 @@
  *   npm run cleanup:demo
  */
 import 'dotenv/config';
-import { PrismaMariaDb } from '@prisma/adapter-mariadb';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '.prisma/client';
+import { Pool } from 'pg';
 
 const DEMO_EMAIL = 'demo@taxsmart.local';
 
@@ -17,8 +18,9 @@ async function main() {
     throw new Error('DATABASE_URL is not set');
   }
 
+  const pool = new Pool({ connectionString: databaseUrl });
   const prisma = new PrismaClient({
-    adapter: new PrismaMariaDb(databaseUrl),
+    adapter: new PrismaPg(pool),
   });
 
   try {
@@ -32,24 +34,22 @@ async function main() {
     });
 
     if (!demo) {
-      console.log(`No user with email ${DEMO_EMAIL} — nothing to delete.`);
+      console.log(`No user found with email ${DEMO_EMAIL} — nothing to delete.`);
       return;
     }
 
-    console.log(
-      `Deleting ${demo.email} (invoices=${demo._count.invoices}, refreshTokens=${demo._count.refreshTokens})...`,
-    );
-
-    // onDelete: Cascade ใน schema จะลบ invoices / refresh_tokens ให้
     await prisma.user.delete({ where: { id: demo.id } });
 
-    console.log('Demo user cleanup done.');
+    console.log(
+      `Deleted ${DEMO_EMAIL} (${demo._count.invoices} invoices, ${demo._count.refreshTokens} refresh tokens).`,
+    );
   } finally {
     await prisma.$disconnect();
+    await pool.end();
   }
 }
 
-main().catch((err) => {
-  console.error(err);
+main().catch((error) => {
+  console.error(error);
   process.exit(1);
 });
