@@ -27,6 +27,11 @@ enum Role {
   ADMIN
 }
 
+enum TaxpayerType {
+  INDIVIDUAL
+  CORPORATE
+}
+
 // ==========================================
 // MODELS
 // ==========================================
@@ -40,6 +45,7 @@ model User {
   
   invoices      Invoice[]
   refreshTokens RefreshToken[]
+  taxProfile    TaxProfile?
 
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
@@ -119,4 +125,20 @@ model InvoiceItem {
 
   @@index([invoiceId])
   @@map("invoice_items")
+}
+
+// โปรไฟล์ภาษีของ user — 1 คนต่อ 1 แถว (upsert ผ่าน PUT /tax/profile)
+model TaxProfile {
+  id              String        @id @default(uuid())
+  userId          String        @unique @map("user_id")
+  taxpayerType    TaxpayerType  @default(INDIVIDUAL) @map("taxpayer_type")
+  estimatedIncome Decimal       @default(0) @db.Decimal(14, 2) @map("estimated_income")
+  taxYear         Int           @map("tax_year")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("tax_profiles")
 }

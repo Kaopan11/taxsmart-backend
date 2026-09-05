@@ -1,0 +1,23 @@
+{
+  "taxYear": 2026,
+  "defaultEffectiveRate": 0.15,
+  "categoryWeights": {
+    "MEALS": 0.5,
+    "OTHER": 0.8,
+    "default": 1
+  },
+  "individualBrackets": [
+    { "upTo": 150000, "rate": 0 },
+    { "upTo": 300000, "rate": 0.05 },
+    { "upTo": 500000, "rate": 0.1 },
+    { "upTo": 750000, "rate": 0.15 },
+    { "upTo": 1000000, "rate": 0.2 },
+    { "upTo": 2000000, "rate": 0.25 },
+    { "upTo": null, "rate": 0.35 }
+  ],
+  "corporateTiers": [
+    { "upTo": 300000, "rate": 0 },
+    { "upTo": 3000000, "rate": 0.15 },
+    { "upTo": null, "rate": 0.2 }
+  ]
+}
