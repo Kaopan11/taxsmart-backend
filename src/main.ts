@@ -3,6 +3,17 @@ import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 
+/** อ่าน CORS_ORIGINS คั่นด้วย comma — default สำหรับ dev local */
+function getCorsOrigins(): string[] {
+  const raw =
+    process.env.CORS_ORIGINS ??
+    'http://localhost:3000,http://localhost:4000';
+  return raw
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -17,9 +28,9 @@ async function bootstrap() {
     }),
   );
 
-  // credentials: true จำเป็นเมื่อ frontend ส่ง cookie ข้ามพอร์ต
+  // credentials: true จำเป็นเมื่อ frontend ส่ง cookie ข้าม origin (Vercel → Render)
   app.enableCors({
-    origin: ['http://localhost:4000'],
+    origin: getCorsOrigins(),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,

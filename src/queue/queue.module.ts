@@ -10,12 +10,19 @@ import { INVOICE_OCR_QUEUE } from './queue.constants';
     GeminiModule,
     BullModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        connection: {
-          host: configService.get<string>('REDIS_HOST', 'localhost'),
-          port: Number(configService.get('REDIS_PORT', 6379)),
-        },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const password = configService.get<string>('REDIS_PASSWORD');
+        const tlsEnabled = configService.get<string>('REDIS_TLS') === 'true';
+
+        return {
+          connection: {
+            host: configService.get<string>('REDIS_HOST', 'localhost'),
+            port: Number(configService.get('REDIS_PORT', 6379)),
+            ...(password ? { password } : {}),
+            ...(tlsEnabled ? { tls: {} } : {}),
+          },
+        };
+      },
     }),
     BullModule.registerQueue({
       name: INVOICE_OCR_QUEUE,
