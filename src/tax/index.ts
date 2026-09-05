@@ -10,4 +10,7 @@ export type {
   TaxpayerType,
   TaxRules,
 } from './tax-calculator.types';
+export type { TaxProfileView, UpsertTaxProfileInput } from './tax-profile.types';
+export { DEFAULT_EFFECTIVE_RATE, DEFAULT_TAX_YEAR } from './tax-profile.types';
+export { TaxModule } from './tax.module';
 export { default as taxRules2026 } from './tax-rules/2026.json';

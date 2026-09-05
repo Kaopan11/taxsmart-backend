@@ -8,6 +8,7 @@ import { GeminiModule } from './gemini/gemini.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { QueueModule } from './queue/queue.module';
+import { TaxModule } from './tax/tax.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { QueueModule } from './queue/queue.module';
     AdminModule, // P3: /admin/* ต้องเป็น ADMIN
     GeminiModule,
     InvoicesModule,
+    TaxModule,
     PrismaModule,
     QueueModule,
   ],
