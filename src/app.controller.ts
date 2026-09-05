@@ -9,4 +9,10 @@ export class AppController {
   getHello(): string {
     return this.appService.getHello();
   }
+
+  /** Render health check — ไม่ต้อง auth */
+  @Get('health')
+  getHealth(): { status: string } {
+    return { status: 'ok' };
+  }
 }
