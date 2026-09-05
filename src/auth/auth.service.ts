@@ -179,7 +179,7 @@ export class AuthService {
     return { accessToken, user };
   }
 
-  /** สร้าง refresh ดิบ + เก็บเฉพาะ hash ใน MySQL */
+  /** สร้าง refresh ดิบ + เก็บเฉพาะ hash ใน DB */
   private async createRefreshToken(userId: string) {
     const rawToken = randomBytes(48).toString('hex');
     const tokenHash = this.hashToken(rawToken);
