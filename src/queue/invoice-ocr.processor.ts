@@ -1,9 +1,9 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Inject, Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { OcrStatus, Prisma } from '.prisma/client';
+import { INVOICE_FILE_STORAGE } from '../invoices/storage/invoice-file-storage.constants';
+import type { InvoiceFileStorage } from '../invoices/storage/invoice-file-storage.interface';
 import { GeminiService } from '../gemini/gemini.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -18,12 +18,14 @@ export class InvoiceOcrProcessor extends WorkerHost {
   constructor(
     private readonly prisma: PrismaService,
     private readonly geminiService: GeminiService,
+    @Inject(INVOICE_FILE_STORAGE)
+    private readonly fileStorage: InvoiceFileStorage,
   ) {
     super();
   }
 
   async process(job: Job<InvoiceOcrJobData>): Promise<void> {
-    const { invoiceId, filePath, mimeType } = job.data;
+    const { invoiceId, storageKey, mimeType } = job.data;
     this.logger.log(`OCR start invoiceId=${invoiceId} jobId=${job.id}`);
 
     const markedProcessing = await this.safeInvoiceUpdate(
@@ -36,8 +38,7 @@ export class InvoiceOcrProcessor extends WorkerHost {
     }
 
     try {
-      const absolutePath = join(process.cwd(), ...filePath.split('/'));
-      const buffer = await readFile(absolutePath);
+      const buffer = await this.fileStorage.get(storageKey);
       const extracted = await this.geminiService.extractReceipt(
         buffer,
         mimeType,

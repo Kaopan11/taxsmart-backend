@@ -1,15 +1,9 @@
 /// <reference types="jest" />
-import { readFile } from 'node:fs/promises';
 import { Job } from 'bullmq';
 import { OcrStatus } from '.prisma/client';
 import { InvoiceOcrProcessor } from './invoice-ocr.processor';
 import type { InvoiceOcrJobData } from './queue.constants';
-
-jest.mock('node:fs/promises', () => ({
-  readFile: jest.fn(),
-}));
-
-const mockedReadFile = readFile as jest.MockedFunction<typeof readFile>;
+import type { InvoiceFileStorage } from '../invoices/storage/invoice-file-storage.interface';
 
 describe('InvoiceOcrProcessor — delete race', () => {
   const invoiceId = 'inv-deleted';
@@ -17,7 +11,7 @@ describe('InvoiceOcrProcessor — delete race', () => {
     id: invoiceId,
     data: {
       invoiceId,
-      filePath: 'uploads/inv-deleted.jpg',
+      storageKey: 'invoices/user-1/inv-deleted.jpg',
       mimeType: 'image/jpeg',
     },
   } as Job<InvoiceOcrJobData>;
@@ -32,6 +26,7 @@ describe('InvoiceOcrProcessor — delete race', () => {
   let geminiService: {
     extractReceipt: jest.Mock;
   };
+  let fileStorage: jest.Mocked<InvoiceFileStorage>;
   let processor: InvoiceOcrProcessor;
 
   beforeEach(() => {
@@ -46,7 +41,16 @@ describe('InvoiceOcrProcessor — delete race', () => {
     geminiService = {
       extractReceipt: jest.fn(),
     };
-    processor = new InvoiceOcrProcessor(prisma as never, geminiService as never);
+    fileStorage = {
+      put: jest.fn(),
+      get: jest.fn(),
+      delete: jest.fn(),
+    };
+    processor = new InvoiceOcrProcessor(
+      prisma as never,
+      geminiService as never,
+      fileStorage,
+    );
   });
 
   it('stops quietly when invoice was deleted before PROCESSING update', async () => {
@@ -58,7 +62,7 @@ describe('InvoiceOcrProcessor — delete race', () => {
   });
 
   it('stops quietly when invoice disappears after OCR extract', async () => {
-    mockedReadFile.mockResolvedValue(Buffer.from('img'));
+    fileStorage.get.mockResolvedValue(Buffer.from('img'));
     geminiService.extractReceipt.mockResolvedValue({
       storeName: 'Shop',
       taxId: null,
@@ -68,11 +72,14 @@ describe('InvoiceOcrProcessor — delete race', () => {
 
     await expect(processor.process(job)).resolves.toBeUndefined();
 
+    expect(fileStorage.get).toHaveBeenCalledWith(
+      'invoices/user-1/inv-deleted.jpg',
+    );
     expect(prisma.invoice.update).toHaveBeenCalledTimes(1);
   });
 
   it('stops quietly when invoice was deleted before marking FAILED', async () => {
-    mockedReadFile.mockRejectedValue(new Error('Gemini down'));
+    fileStorage.get.mockRejectedValue(new Error('Gemini down'));
     prisma.invoice.findUnique.mockResolvedValue(null);
 
     await expect(processor.process(job)).resolves.toBeUndefined();
@@ -81,7 +88,7 @@ describe('InvoiceOcrProcessor — delete race', () => {
   });
 
   it('marks FAILED when OCR fails and invoice still exists', async () => {
-    mockedReadFile.mockRejectedValue(new Error('Gemini down'));
+    fileStorage.get.mockRejectedValue(new Error('Gemini down'));
     prisma.invoice.findUnique.mockResolvedValue({ id: invoiceId });
 
     await expect(processor.process(job)).resolves.toBeUndefined();

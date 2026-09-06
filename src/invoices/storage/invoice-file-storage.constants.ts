@@ -1,0 +1,1 @@
+export const INVOICE_FILE_STORAGE = Symbol('INVOICE_FILE_STORAGE');
