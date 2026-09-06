@@ -1,20 +1,11 @@
 /// <reference types="jest" />
-import { mkdir, writeFile } from 'node:fs/promises';
 import { OcrStatus } from '.prisma/client';
 import { InvoicesService } from './invoices.service';
+import type { InvoiceFileStorage } from './storage/invoice-file-storage.interface';
 
 jest.mock('node:crypto', () => ({
   randomUUID: jest.fn(() => 'fixed-invoice-id'),
 }));
-
-jest.mock('node:fs/promises', () => ({
-  mkdir: jest.fn(),
-  writeFile: jest.fn(),
-  readFile: jest.fn(),
-}));
-
-const mockedMkdir = mkdir as jest.MockedFunction<typeof mkdir>;
-const mockedWriteFile = writeFile as jest.MockedFunction<typeof writeFile>;
 
 describe('InvoicesService.enqueueUpload', () => {
   let prisma: {
@@ -25,6 +16,7 @@ describe('InvoicesService.enqueueUpload', () => {
   let invoiceOcrQueue: {
     add: jest.Mock;
   };
+  let fileStorage: jest.Mocked<InvoiceFileStorage>;
   let service: InvoicesService;
 
   beforeEach(() => {
@@ -37,10 +29,19 @@ describe('InvoicesService.enqueueUpload', () => {
     invoiceOcrQueue = {
       add: jest.fn().mockResolvedValue(undefined),
     };
-    service = new InvoicesService(prisma as never, invoiceOcrQueue as never);
+    fileStorage = {
+      put: jest.fn().mockResolvedValue(undefined),
+      get: jest.fn(),
+      delete: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new InvoicesService(
+      prisma as never,
+      invoiceOcrQueue as never,
+      fileStorage,
+    );
   });
 
-  it('enqueues OCR job with jobId equal to invoiceId', async () => {
+  it('stores file, creates invoice, and enqueues OCR with storageKey', async () => {
     const result = await service.enqueueUpload('user-1', {
       buffer: Buffer.from('receipt'),
       mimetype: 'image/jpeg',
@@ -50,21 +51,56 @@ describe('InvoicesService.enqueueUpload', () => {
       invoiceId: 'fixed-invoice-id',
       ocrStatus: OcrStatus.PENDING,
     });
+    expect(fileStorage.put).toHaveBeenCalledWith(
+      'invoices/user-1/fixed-invoice-id.jpg',
+      Buffer.from('receipt'),
+    );
+    expect(prisma.invoice.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          id: 'fixed-invoice-id',
+          fileUrl: 'invoices/user-1/fixed-invoice-id.jpg',
+        }),
+      }),
+    );
     expect(invoiceOcrQueue.add).toHaveBeenCalledWith(
       'extract',
       {
         invoiceId: 'fixed-invoice-id',
-        filePath: 'uploads/fixed-invoice-id.jpg',
+        storageKey: 'invoices/user-1/fixed-invoice-id.jpg',
         mimeType: 'image/jpeg',
       },
       { jobId: 'fixed-invoice-id' },
     );
-    expect(mockedMkdir).toHaveBeenCalled();
-    expect(mockedWriteFile).toHaveBeenCalled();
-    expect(prisma.invoice.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ id: 'fixed-invoice-id' }),
+  });
+
+  it('does not create invoice when storage put fails', async () => {
+    fileStorage.put.mockRejectedValue(new Error('disk full'));
+
+    await expect(
+      service.enqueueUpload('user-1', {
+        buffer: Buffer.from('receipt'),
+        mimetype: 'image/jpeg',
       }),
+    ).rejects.toThrow('disk full');
+
+    expect(prisma.invoice.create).not.toHaveBeenCalled();
+    expect(invoiceOcrQueue.add).not.toHaveBeenCalled();
+  });
+
+  it('rolls back storage when invoice create fails', async () => {
+    prisma.invoice.create.mockRejectedValue(new Error('db down'));
+
+    await expect(
+      service.enqueueUpload('user-1', {
+        buffer: Buffer.from('receipt'),
+        mimetype: 'image/jpeg',
+      }),
+    ).rejects.toThrow('db down');
+
+    expect(fileStorage.delete).toHaveBeenCalledWith(
+      'invoices/user-1/fixed-invoice-id.jpg',
     );
+    expect(invoiceOcrQueue.add).not.toHaveBeenCalled();
   });
 });
