@@ -1,13 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { OcrStatus, Prisma } from '.prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,8 +18,10 @@ import type { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import {
   contentTypeFromFileUrl,
   filenameFromFileUrl,
-  resolveInvoiceFilePath,
 } from './invoice-file.util';
+import { INVOICE_FILE_STORAGE } from './storage/invoice-file-storage.constants';
+import type { InvoiceFileStorage } from './storage/invoice-file-storage.interface';
+import { assertValidStorageKey, buildInvoiceStorageKey } from './storage/invoice-storage-key.util';
 
 export type UploadedReceiptFile = {
   buffer: Buffer;
@@ -74,7 +75,7 @@ const INVOICE_LIST_SELECT = {
   issueDate: true,
   totalAmount: true,
   category: true,
-  fileUrl: true, // FE รู้ว่ามีไฟล์ — แต่ fetch ผ่าน GET /invoices/:id/file ไม่เปิด URL ตรง
+  fileUrl: true, // storage key — fetch ผ่าน GET /invoices/:id/file
   rawOcrData: true,
   createdAt: true,
   updatedAt: true,
@@ -86,33 +87,38 @@ export class InvoicesService {
     private readonly prisma: PrismaService,
     @InjectQueue(INVOICE_OCR_QUEUE)
     private readonly invoiceOcrQueue: Queue<InvoiceOcrJobData>,
+    @Inject(INVOICE_FILE_STORAGE)
+    private readonly fileStorage: InvoiceFileStorage,
   ) {}
 
   /** P1: รับ userId จาก JWT แทน demo@taxsmart.local */
   async enqueueUpload(userId: string, file: UploadedReceiptFile) {
     const invoiceId = randomUUID();
     const extension = MIME_TO_EXT[file.mimetype] ?? '.bin';
-    const relativePath = join('uploads', `${invoiceId}${extension}`);
-    const absolutePath = join(process.cwd(), relativePath);
+    const storageKey = buildInvoiceStorageKey(userId, invoiceId, extension);
 
-    await mkdir(join(process.cwd(), 'uploads'), { recursive: true });
-    await writeFile(absolutePath, file.buffer);
+    await this.fileStorage.put(storageKey, file.buffer);
 
-    await this.prisma.invoice.create({
-      data: {
-        id: invoiceId,
-        userId,
-        fileUrl: relativePath.replaceAll('\\', '/'),
-        ocrStatus: OcrStatus.PENDING,
-      },
-    });
+    try {
+      await this.prisma.invoice.create({
+        data: {
+          id: invoiceId,
+          userId,
+          fileUrl: storageKey,
+          ocrStatus: OcrStatus.PENDING,
+        },
+      });
+    } catch (error) {
+      await this.fileStorage.delete(storageKey).catch(() => undefined);
+      throw error;
+    }
 
     // jobId = invoiceId → ตอน DELETE เรียก getJob(invoiceId).remove() ยกเลิกคิวได้ตรง ๆ
     await this.invoiceOcrQueue.add(
       'extract',
       {
         invoiceId,
-        filePath: relativePath.replaceAll('\\', '/'),
+        storageKey,
         mimeType: file.mimetype,
       },
       { jobId: invoiceId },
@@ -175,8 +181,8 @@ export class InvoicesService {
   }
 
   /**
-   * GET /invoices/:id/file — อ่านไฟล์ใบเสร็จจาก disk
-   * ต้องเป็นเจ้าของ invoice; ไม่เปิด static public /uploads
+   * GET /invoices/:id/file — อ่านไฟล์ใบเสร็จจาก storage
+   * ต้องเป็นเจ้าของ invoice; bucket private — ไม่เปิด public URL
    */
   async getInvoiceFile(userId: string, id: string): Promise<InvoiceFilePayload> {
     const invoice = await this.prisma.invoice.findFirst({
@@ -188,22 +194,22 @@ export class InvoicesService {
       throw new NotFoundException(`Invoice ${id} not found`);
     }
 
-    let absolutePath: string;
+    let storageKey: string;
     try {
-      absolutePath = resolveInvoiceFilePath(invoice.fileUrl);
+      storageKey = assertValidStorageKey(invoice.fileUrl);
     } catch {
       throw new NotFoundException(`Invoice file for ${id} not found`);
     }
 
     let buffer: Buffer;
     try {
-      buffer = await readFile(absolutePath);
+      buffer = await this.fileStorage.get(storageKey);
     } catch (error) {
       const code =
         error instanceof Error && 'code' in error
           ? (error as NodeJS.ErrnoException).code
           : undefined;
-      if (code === 'ENOENT') {
+      if (code === 'ENOENT' || code === 'NoSuchKey') {
         throw new NotFoundException(`Invoice file for ${id} not found`);
       }
       throw error;
@@ -211,8 +217,8 @@ export class InvoicesService {
 
     return {
       buffer,
-      contentType: contentTypeFromFileUrl(invoice.fileUrl),
-      filename: filenameFromFileUrl(invoice.fileUrl),
+      contentType: contentTypeFromFileUrl(storageKey),
+      filename: filenameFromFileUrl(storageKey),
     };
   }
 
@@ -306,20 +312,20 @@ export class InvoicesService {
       }
     }
 
-    // ลบไฟล์บน disk — ไฟล์หายหรือ path ไม่ valid ไม่ block การลบ DB
+    // ลบ object ใน storage — ไฟล์หายหรือ key ไม่ valid ไม่ block การลบ DB
     try {
-      const absolutePath = resolveInvoiceFilePath(invoice.fileUrl);
-      await unlink(absolutePath);
+      const storageKey = assertValidStorageKey(invoice.fileUrl);
+      await this.fileStorage.delete(storageKey);
     } catch (error) {
       const code =
         error instanceof Error && 'code' in error
           ? (error as NodeJS.ErrnoException).code
           : undefined;
-      const isMissingFile = code === 'ENOENT';
-      const isInvalidPath =
+      const isMissingFile = code === 'ENOENT' || code === 'NoSuchKey';
+      const isInvalidKey =
         error instanceof Error &&
-        error.message === 'Invalid invoice file path';
-      if (!isMissingFile && !isInvalidPath) {
+        error.message === 'Invalid invoice storage key';
+      if (!isMissingFile && !isInvalidKey) {
         throw error;
       }
     }

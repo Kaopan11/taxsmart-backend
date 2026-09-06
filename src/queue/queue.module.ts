@@ -2,12 +2,14 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GeminiModule } from '../gemini/gemini.module';
+import { InvoiceFileStorageModule } from '../invoices/storage/invoice-file-storage.module';
 import { InvoiceOcrProcessor } from './invoice-ocr.processor';
 import { INVOICE_OCR_QUEUE } from './queue.constants';
 
 @Module({
   imports: [
     GeminiModule,
+    InvoiceFileStorageModule,
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {

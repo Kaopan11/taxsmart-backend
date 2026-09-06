@@ -1,17 +1,8 @@
 /// <reference types="jest" />
 import { NotFoundException } from '@nestjs/common';
-import { unlink } from 'node:fs/promises';
 import { OcrStatus } from '.prisma/client';
 import { InvoicesService } from './invoices.service';
-
-jest.mock('node:fs/promises', () => ({
-  mkdir: jest.fn(),
-  writeFile: jest.fn(),
-  readFile: jest.fn(),
-  unlink: jest.fn(),
-}));
-
-const mockedUnlink = unlink as jest.MockedFunction<typeof unlink>;
+import type { InvoiceFileStorage } from './storage/invoice-file-storage.interface';
 
 describe('InvoicesService.remove', () => {
   const userId = 'user-1';
@@ -26,6 +17,7 @@ describe('InvoicesService.remove', () => {
   let invoiceOcrQueue: {
     getJob: jest.Mock;
   };
+  let fileStorage: jest.Mocked<InvoiceFileStorage>;
   let service: InvoicesService;
 
   beforeEach(() => {
@@ -39,20 +31,28 @@ describe('InvoicesService.remove', () => {
     invoiceOcrQueue = {
       getJob: jest.fn().mockResolvedValue(null),
     };
-    mockedUnlink.mockResolvedValue(undefined);
-    service = new InvoicesService(prisma as never, invoiceOcrQueue as never);
+    fileStorage = {
+      put: jest.fn(),
+      get: jest.fn(),
+      delete: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new InvoicesService(
+      prisma as never,
+      invoiceOcrQueue as never,
+      fileStorage,
+    );
   });
 
-  it('deletes owned invoice, file on disk, and returns void', async () => {
+  it('deletes owned invoice, storage object, and returns void', async () => {
     prisma.invoice.findFirst.mockResolvedValue({
       id: invoiceId,
-      fileUrl: 'uploads/inv-1.jpg',
+      fileUrl: 'invoices/user-1/inv-1.jpg',
       ocrStatus: OcrStatus.COMPLETED,
     });
 
     await expect(service.remove(userId, invoiceId)).resolves.toBeUndefined();
 
-    expect(mockedUnlink).toHaveBeenCalled();
+    expect(fileStorage.delete).toHaveBeenCalledWith('invoices/user-1/inv-1.jpg');
     expect(prisma.invoice.delete).toHaveBeenCalledWith({ where: { id: invoiceId } });
     expect(invoiceOcrQueue.getJob).not.toHaveBeenCalled();
   });
@@ -64,7 +64,7 @@ describe('InvoicesService.remove', () => {
       NotFoundException,
     );
 
-    expect(mockedUnlink).not.toHaveBeenCalled();
+    expect(fileStorage.delete).not.toHaveBeenCalled();
     expect(prisma.invoice.delete).not.toHaveBeenCalled();
   });
 
@@ -72,7 +72,7 @@ describe('InvoicesService.remove', () => {
     const jobRemove = jest.fn().mockResolvedValue(undefined);
     prisma.invoice.findFirst.mockResolvedValue({
       id: invoiceId,
-      fileUrl: 'uploads/inv-1.jpg',
+      fileUrl: 'invoices/user-1/inv-1.jpg',
       ocrStatus: OcrStatus.PENDING,
     });
     invoiceOcrQueue.getJob.mockResolvedValue({ remove: jobRemove });
@@ -88,7 +88,7 @@ describe('InvoicesService.remove', () => {
     const jobRemove = jest.fn().mockResolvedValue(undefined);
     prisma.invoice.findFirst.mockResolvedValue({
       id: invoiceId,
-      fileUrl: 'uploads/inv-1.pdf',
+      fileUrl: 'invoices/user-1/inv-1.pdf',
       ocrStatus: OcrStatus.PROCESSING,
     });
     invoiceOcrQueue.getJob.mockResolvedValue({ remove: jobRemove });
@@ -99,13 +99,13 @@ describe('InvoicesService.remove', () => {
     expect(jobRemove).toHaveBeenCalled();
   });
 
-  it('still deletes DB when file is missing on disk', async () => {
+  it('still deletes DB when storage object is missing', async () => {
     prisma.invoice.findFirst.mockResolvedValue({
       id: invoiceId,
-      fileUrl: 'uploads/inv-1.jpg',
+      fileUrl: 'invoices/user-1/inv-1.jpg',
       ocrStatus: OcrStatus.COMPLETED,
     });
-    mockedUnlink.mockRejectedValue(
+    fileStorage.delete.mockRejectedValue(
       Object.assign(new Error('ENOENT'), { code: 'ENOENT' }),
     );
 
@@ -117,7 +117,7 @@ describe('InvoicesService.remove', () => {
   it('allows delete for DUPLICATE status', async () => {
     prisma.invoice.findFirst.mockResolvedValue({
       id: invoiceId,
-      fileUrl: 'uploads/inv-1.jpg',
+      fileUrl: 'invoices/user-1/inv-1.jpg',
       ocrStatus: OcrStatus.DUPLICATE,
     });
 
